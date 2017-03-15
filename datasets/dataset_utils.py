@@ -25,7 +25,13 @@ from six.moves import urllib
 import tensorflow as tf
 
 LABELS_FILENAME = 'labels.txt'
-
+def norm(x):
+    if x < 0:
+        x = 0
+    else:
+        if x > 1:
+            x = 1
+    return x
 
 def int64_feature(value):
     """Wrapper for inserting int64 features into Example proto.

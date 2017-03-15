@@ -8,7 +8,7 @@ import scipy.io as sio
 import os
 import tensorflow as tf
 import re
-from datasets.dataset_utils import int64_feature, float_feature, bytes_feature ,ImageCoder
+from datasets.dataset_utils import int64_feature, float_feature, bytes_feature ,ImageCoder, norm
 import cv2
 from PIL import Image
 
@@ -25,7 +25,7 @@ NUMoffolder = 1
 ## So Transform tfrecord according to dir name
 
 
-def _convert_to_example(image_data, shape, bbox, label):
+def _convert_to_example(image_data, shape, bbox, label,imname):
 	nbbox = np.array(bbox)
 	ymin = list(nbbox[:, 0])
 	xmin = list(nbbox[:, 1])
@@ -45,6 +45,7 @@ def _convert_to_example(image_data, shape, bbox, label):
 			'image/object/bbox/label': int64_feature(label),
 			'image/format': bytes_feature('jpeg'),
 			'image/encoded': bytes_feature(image_data),
+			'image/name': bytes_feature(imname.tostring()),
 			}))
 	return example
 	
@@ -61,13 +62,19 @@ def _processing_image(wordbb, imname,coder):
 	bbox = []
 	[xmin, ymin]= np.min(wordbb,1)
 	[xmax, ymax] = np.max(wordbb,1)
+	xmin = np.maximum(xmin, 0)
+	ymin = np.maximum(ymin, 0)
+	xmax = np.maximum(xmax, 0)
+	ymax = np.maximum(ymax, 0)
 	if numofbox > 1:
 		bbox = [[ymin[i]/shape[0],xmin[i]/shape[1],ymax[i]/shape[0],xmax[i]/shape[1]] for i in range(numofbox)] 
 	if numofbox == 1:
 		bbox = [[ymin/shape[0],xmin/shape[1],ymax/shape[0],xmax/shape[1]]]
+
+
 	label = [1 for i in range(numofbox)]
 	shape = list(shape)
-	return image_data, shape, bbox, label
+	return image_data, shape, bbox, label, imname
 
 
 def run():
@@ -87,13 +94,13 @@ def run():
 		res =[i for i in range(imnames.shape[1]) if pattern.match(imnames[0,i][0]) != None ]
 		print len(res)
 		# shuffle
-		#res = np.random.permutation(res)
+		res = np.random.permutation(res)
 		for j in res:
 			wordbb = wordBB[0,j]
 			imname = imnames[0,j][0]
-			image_data, shape, bbox, label = _processing_image(wordbb, imname,coder)
+			image_data, shape, bbox, label ,imname= _processing_image(wordbb, imname,coder)
 
-			example = _convert_to_example(image_data, shape, bbox, label)
+			example = _convert_to_example(image_data, shape, bbox, label, imname)
 			tfrecord_writer.write(example.SerializeToString())  
 	print 'Transform to tfrecord finished'
 

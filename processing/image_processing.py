@@ -17,11 +17,12 @@ import tf_extended as tfe
 import os
 import matplotlib.pyplot as plt
 import skimage.io as skio
+import cv2
 
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer('batch_size', 2,
+tf.app.flags.DEFINE_integer('batch_size', 1,
 							"""Number of images to process in a batch.""")
 tf.app.flags.DEFINE_integer('Height', 300,
 							"""Provide square images of this size.""")
@@ -30,7 +31,7 @@ tf.app.flags.DEFINE_integer('Width', 300,
 tf.app.flags.DEFINE_integer('num_preprocess_threads', 4,
 							"""Number of preprocessing threads per tower. """
 							"""Please make this a multiple of 4.""")
-tf.app.flags.DEFINE_integer('num_readers', 4,
+tf.app.flags.DEFINE_integer('num_readers', 1,
 							"""Number of parallel readers during train.""")
 
 # Images are preprocessed asynchronously using multiple threads specified by
@@ -43,6 +44,7 @@ tf.app.flags.DEFINE_integer('num_readers', 4,
 # of 1024*16 images. Assuming RGB 299x299 images, this implies a queue size of
 # 16GB. If the machine is memory limited, then decrease this factor to
 # decrease the CPU memory footprint, accordingly.
+
 tf.app.flags.DEFINE_integer('input_queue_memory_factor', 1,
 							"""Size of the queue of preprocessed images. """
 							"""Default is ideal but try smaller values, e.g. """
@@ -76,11 +78,11 @@ def distorted_inputs(data_files, batch_size=None, num_preprocess_threads=None):
 	# Force all input processing onto CPU in order to reserve the GPU for
 	# the forward inference and back-propagation.
 	with tf.device('/cpu:0'):
-		images = batch_inputs(
+		images ,box,name= batch_inputs(
 			data_files, batch_size, train=True,
 			num_preprocess_threads=num_preprocess_threads,
 			num_readers=FLAGS.num_readers)
-	return images
+	return images,box,name
 
 def parse_example(example_serialized):
 	"""
@@ -114,6 +116,7 @@ def parse_example(example_serialized):
 		'image/object/bbox/label': tf.VarLenFeature(dtype=tf.int64),
 		'image/format': tf.FixedLenFeature([], tf.string, default_value='jpeg'),
 		'image/encoded': tf.FixedLenFeature([], tf.string, default_value=''),
+		'image/name': tf.VarLenFeature(dtype = tf.string),
 	}
 	features = tf.parse_single_example(example_serialized, feature_map)
 	#image = tf.decode_raw(features['image/encoded'], tf.uint8)
@@ -128,7 +131,9 @@ def parse_example(example_serialized):
 	label = tf.expand_dims(features['image/object/bbox/label'].values, 0)
 	width = tf.cast(features['image/height'], dtype=tf.int64)
 	height = tf.cast(features['image/width'], dtype=tf.int64)
-	return Image_buffer, label, bboxes
+	name = tf.cast(features['image/name'], dtype = tf.string)
+	print "name %s" % (name) 
+	return Image_buffer, label, bboxes, name
 
 
 
@@ -283,8 +288,8 @@ def distort_color(image, thread_id=0, scope=None):
 
 
 def batch_inputs(data_files, batch_size, train, num_preprocess_threads=None,num_readers=4):
-	"""Contruct batches of training or evaluation examples from the image dataset.
 
+	"""Contruct batches of training or evaluation examples from the image dataset.
 	Args:
 	dataset: instance of Dataset class specifying the dataset.
 	  See dataset.py for details.
@@ -300,6 +305,7 @@ def batch_inputs(data_files, batch_size, train, num_preprocess_threads=None,num_
 	Raises:
 	ValueError: if data is not found
 	"""
+
 	#print 1
 	with tf.name_scope('batch_processing'):
 		if data_files is None:
@@ -307,11 +313,11 @@ def batch_inputs(data_files, batch_size, train, num_preprocess_threads=None,num_
 
 		# Create filename_queue
 		if train:
-		  filename_queue = tf.train.string_input_producer(data_files,
+		  filename_queue = tf.train.string_input_producer(data_files,num_epochs = 2,
 														  shuffle=True,
 														  capacity=16)
 		else:
-		  filename_queue = tf.train.string_input_producer(data_files,
+		  filename_queue = tf.train.string_input_producer(data_files, num_epochs = 2,
 														  shuffle=False,
 														  capacity=1)
 		if num_preprocess_threads is None:
@@ -328,12 +334,15 @@ def batch_inputs(data_files, batch_size, train, num_preprocess_threads=None,num_
 		  raise ValueError('Please make num_readers at least 1')
 
 		# Approximate number of examples per shard.
+		
 		examples_per_shard = 512
+
 		# Size the random shuffle queue to balance between good global
 		# mixing (more examples) and memory use (fewer examples).
 		# 1 image uses 299*299*3*4 bytes = 1MB
 		# The default input_queue_memory_factor is 16 implying a shuffling queue
 		# size: examples_per_shard * 16 * 1MB = 17.6GB
+
 		min_queue_examples = examples_per_shard * FLAGS.input_queue_memory_factor
 		if train:
 		  examples_queue = tf.RandomShuffleQueue(
@@ -363,18 +372,20 @@ def batch_inputs(data_files, batch_size, train, num_preprocess_threads=None,num_
 		images_and_labels = []
 		for thread_id in range(num_preprocess_threads):
 		  # Parse a serialized Example proto to extract the image and metadata.
-		  image_buffer, label_index, bbox= parse_example(example_serialized)
-		  image,labels,bbox = image_processing(image_buffer, bbox, label_index,
+		  image_buffer, label_index, bbox, name= parse_example(example_serialized)
+		  image,labels,bbox = image_processing(image_buffer, bbox,label_index,
 		  										train, thread_id)
-		  #print bbox.shape
-		  images_and_labels.append([image])
+		  
+		  images_and_labels.append([image, bbox[1,:],name])
 
-		images = tf.train.batch_join(
+		images ,box,names= tf.train.batch_join(
 			images_and_labels,
 			batch_size=batch_size,
 			capacity=2 * num_preprocess_threads * batch_size)
+		print 'box shape %s' % (box.shape)
 
 		# Reshape images into these desired dimensions.
+		
 		print 'image batch phase %s' % (images)
 		height = FLAGS.Height
 		width = FLAGS.Width
@@ -382,14 +393,15 @@ def batch_inputs(data_files, batch_size, train, num_preprocess_threads=None,num_
 
 		#images = tf.cast(images, tf.float32)
 		#images = tf.reshape(images, shape=[batch_size, height, width, depth])
+
 		print 'image reshape %s' % (images)
+
 		# Display the training images in the visualizer.
+
 		tf.summary.image('images', images)
 
-	return images
+	return images, box, names
 
-def bboxes_encode():
-	pass
 
 
 def main(_):
@@ -397,21 +409,31 @@ def main(_):
 	tf_record_pattern = os.path.join(data_dir, '*.tfrecord')
 	data_files = tf.gfile.Glob(tf_record_pattern)
 	print data_files
-	images= distorted_inputs(data_files)
+	images ,box,name= distorted_inputs(data_files)
 	print images.shape
 	
 	with tf.Session() as sess:
 	    sess.run(tf.global_variables_initializer())
+	    sess.run(tf.local_variables_initializer())
 	    coord = tf.train.Coordinator()
 	    threads = tf.train.start_queue_runners(coord=coord)
 	    #print sess.run(shape)
 	    img = sess.run(images)
+	    boxb = sess.run(box)
+	    name = sess.run(name)
+	    print name
 	    print img.shape
 	    print img[0,:,:,:]
-	    skio.imshow(img[1,:,:,:])
+	    #skio.imshow(img[1,:,:,:])
+	    image = img[0,:,:,:]
+	    xmin = int(boxb[0,1] * 300)
+	    ymin = int(boxb[0,0] * 300)
+	    xmax = int(boxb[0,3] * 300)
+	    ymax = int(boxb[0,2] * 300)
+	    skio.imshow(cv2.rectangle(image,(xmin,ymin),(xmax,ymax),(0,0,0)))
 	    skio.show()
-
-	    
+	    skio.imshow(skio.imread(data_dir+ name))
+	    skio.show()
 	    coord.request_stop()
 	    coord.join(threads)
 	 
