@@ -34,7 +34,8 @@ Finish the design of training(can start training)
     --optimizer=adam \
     --learning_rate=0.001 \
     --batch_size=32
-Problems to be solved： 
+
+# Problems to be solved： 
 		1. Need to redesign visualization		
 		2. image_processing can be improved
 		
