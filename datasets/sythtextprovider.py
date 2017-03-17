@@ -38,13 +38,14 @@ def get_datasets(data_dir,file_pattern = '*.tfrecord'):
         'image/object/bbox/xmax': tf.VarLenFeature(dtype=tf.float32),
         'image/object/bbox/ymax': tf.VarLenFeature(dtype=tf.float32),
         'image/object/bbox/label': tf.VarLenFeature(dtype=tf.int64),
-        'image/format': tf.FixedLenFeature((), tf.string, default_value='jpeg'),
-        'image/encoded': tf.FixedLenFeature((), tf.string, default_value=''),
+        'image/format': tf.FixedLenFeature([], tf.string, default_value='jpeg'),
+        'image/encoded': tf.FixedLenFeature([], tf.string, default_value=''),
+        'image/name': tf.VarLenFeature(dtype = tf.string),
     }
 
     items_to_handlers = {
-        #'image': slim.tfexample_decoder.Image('image/encoded', 'image/format'),
-        'image': slim.tfexample_decoder.Tensor('image/encoded'),
+        'image': slim.tfexample_decoder.Image('image/encoded', 'image/format'),
+        #'image': slim.tfexample_decoder.Tensor('image/encoded'),
         'shape': slim.tfexample_decoder.Tensor('image/shape'),
         'height': slim.tfexample_decoder.Tensor('image/height'),
         'width': slim.tfexample_decoder.Tensor('image/width'),

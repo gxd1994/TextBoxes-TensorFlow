@@ -64,8 +64,8 @@ def _processing_image(wordbb, imname,coder):
 	[xmax, ymax] = np.max(wordbb,1)
 	xmin = np.maximum(xmin, 0)
 	ymin = np.maximum(ymin, 0)
-	xmax = np.maximum(xmax, 0)
-	ymax = np.maximum(ymax, 0)
+	xmax = np.minimum(xmax, 1)
+	ymax = np.minimum(ymax, 1)
 	if numofbox > 1:
 		bbox = [[ymin[i]/shape[0],xmin[i]/shape[1],ymax[i]/shape[0],xmax[i]/shape[1]] for i in range(numofbox)] 
 	if numofbox == 1:
